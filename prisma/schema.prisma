@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+
+  drafts      Draft[]
+  templates   Template[]
+  campaigns   EmailCampaign[]
+  attachments Attachment[]
+  gmail       GmailConnection?
+}
+
+// One Gmail account per app user, used to send their campaigns. Tokens are encrypted at rest (AES-256-GCM).
+model GmailConnection {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  gmailAddress     String
+  refreshTokenEnc  String
+  status           String   @default("active") // active | needs_reconnect
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  userId     String
+  filename   String
+  mimeType   String
+  size       Int
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Draft {
+  id            String   @id @default(cuid())
+  userId        String
+  subject       String   @default("")
+  body          String   @default("")
+  recipients    Json     @default("[]")
+  attachmentIds String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  subject   String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+model EmailCampaign {
+  id              String   @id @default(cuid())
+  userId          String
+  subject         String
+  body            String
+  status          String   @default("sending") // sending | completed | cancelled
+  totalRecipients Int
+  successfulCount Int      @default(0)
+  failedCount     Int      @default(0)
+  attachmentIds   String[]
+  provider        String   @default("brevo")
+  senderEmail     String   @default("")
+  createdAt       DateTime @default(now())
+  sentAt          DateTime? // when sending finished
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipients EmailRecipient[]
+
+  @@index([userId, createdAt])
+}
+
+model EmailRecipient {
+  id           String  @id @default(cuid())
+  campaignId   String
+  name         String  @default("")
+  email        String
+  company      String  @default("")
+  position     String  @default("")
+  data         Json    @default("{}") // extra CSV columns used as variables
+  status       String  @default("pending") // pending | sent | failed | cancelled
+  errorMessage String?
+  providerMessageId String? // Brevo messageId
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
